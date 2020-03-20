@@ -21,6 +21,7 @@ class Environment():
     def reset(self):
         self.board = np.zeros((self.row, self.col), dtype=np.int8)
         self.throw()
+        self.done = False
         return self.board
 
     def step(self, action):
