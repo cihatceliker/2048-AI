@@ -5,54 +5,49 @@ import math
 import pickle
 import torch
 
-max_pow = 16
 num_actions = 4
-row = 4
-col = 4
-num_iter = 5000
-env = Environment(row, col)
-#agent = Agent(Brain(max_pow, num_actions), Brain(max_pow, num_actions), num_actions)
-#start = 1
+num_iter = 500000
+print_interval = 10
+save_interval = 100
+env = Environment()
+agent = Agent(num_actions)
+#agent.load("36800") before halving
+agent.load("44000")
+print(agent.optimizer)
+#agent.optimizer = torch.optim.Adam(agent.local_Q.parameters(), 2e-3)
+start = agent.start + 1
 
-def process_state(obs):
-    state = np.zeros((max_pow, row, col))
-    for i in range(row):
-        for j in range(col):
-            if obs[i,j] != 0:
-                state[obs[i,j]-1, i, j] = 1
-    return state
-    
-pickle_in = open("1200.two","rb"); agent = pickle.load(pickle_in)
-start = agent.episodes[-1] + 1
-
-
-agent.eps_end = 0.01
-
+for s in agent.replay_memory.memory:
+    if s[2] > 7:
+        print(s[2])
+mx = 1
 for episode in range(start, num_iter):
-    state = process_state(env.reset())
     done = False
     score = 0
+    ep_duration = 0
+    state = env.reset()
     while not done:
         action = agent.select_action(state)
-        new_obs, reward, done, _ = env.step(action)
-        next_state = process_state(new_obs)
+        next_state, reward, done, max_tile = env.step(action)
         agent.store_experience(state, action, reward, next_state, 1-done)
         state = next_state
-        agent.learn()
-    score = 2**np.max(env.board)
-    
-    agent.eps_start = max(agent.eps_end, agent.eps_decay * agent.eps_start)
+        score += reward
+        ep_duration += 1
+        mx = max(max_tile, mx)
 
+    agent.learn()
+
+    agent.eps_start = max(agent.eps_end, agent.eps_decay * agent.eps_start)
     agent.episodes.append(episode)
     agent.scores.append(score)
+    agent.durations.append(ep_duration)
+    agent.start = episode
     
-
-    if episode % 10 == 0:
-        avg_score = np.mean(agent.scores[max(0, episode-10):(episode+1)])
-        print('episode: ', episode,'score: %.6f' % score, ' average score %.3f' % avg_score, "epsilon",agent.eps_start)
-        if avg_score >= 300 or episode % 50 == 0:
-            pickle_out = open(str(episode)+".two","wb")
-            pickle.dump(agent, pickle_out)
-            pickle_out.close()
-            print("weights are safe for ", episode)
-    else: print('episode: ', episode,'score: %.6f' % score)
+    if episode % print_interval == 0:
+        avg_score = np.mean(agent.scores[max(0, episode-print_interval):(episode+1)])
+        avg_duration = np.mean(agent.durations[max(0, episode-print_interval):(episode+1)])
+        if episode % save_interval == 0:
+            agent.save(str(episode))
+        print("Episode: %d - Max Score: %d - Avg. Duration: %d - Avg. Score: %.3f - Epsilon: %.3f" % 
+                    (episode, 2**mx, avg_duration, avg_score, agent.eps_start))
+        mx = 1

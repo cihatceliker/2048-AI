@@ -2,8 +2,9 @@ import numpy as np
 import random
 import sys
 
-REWARD = lambda x: x**2/64
-DIE = -10
+REWARD = lambda x: 2 ** x / 128
+
+DIE = -16
 
 class Environment():
 
@@ -20,17 +21,35 @@ class Environment():
     
     def reset(self):
         self.board = np.zeros((self.row, self.col), dtype=np.int8)
-        self.throw()
+        self.prev = self.board.copy()
         self.done = False
-        return self.board
+        self.throw()
+        return self.process_state()
 
     def step(self, action):
         self.reward = 0
+        self.prev = self.board.copy()
         self.done = False
-        self.info = ""
         self.moves[action]()
         self.throw()
-        return self.board, self.reward, self.done, self.info
+        return self.process_state(), self.reward, self.done, np.max(self.board)
+
+    def process_state(self):
+        state = np.zeros((16, 4, 4))
+        for i in range(4):
+            for j in range(4):
+                state[self.board[i,j], i, j] = 1
+        return state
+        
+    """
+    def process_state(self):
+        state = np.zeros((32, 4, 4))
+        for i in range(4):
+            for j in range(4):
+                state[self.prev[i,j], i, j] = 1
+                state[self.board[i,j]+16, i, j] = 1
+        return state
+    """
 
     def throw(self):
         empty_tiles = []
@@ -56,7 +75,7 @@ class Environment():
                     for k in reversed(range(j)):
                         if self.board[i, k] == curr:
                             self.board[i, j] += 1
-                            self.reward = REWARD(curr)
+                            self.reward = REWARD(self.board[i, j])
                             self.board[i, k] = 0
                             break
                         elif self.board[i, k] != 0:
@@ -78,7 +97,7 @@ class Environment():
                     for k in range(j + 1, self.col):
                         if self.board[i, k] == curr:
                             self.board[i, j] += 1
-                            self.reward = REWARD(curr)
+                            self.reward = REWARD(self.board[i, j])
                             self.board[i, k] = 0
                             break
                         elif self.board[i, k] != 0:

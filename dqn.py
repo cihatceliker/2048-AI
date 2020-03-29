@@ -4,47 +4,66 @@ import torch.nn as nn
 import numpy as np
 import random
 import math
+import pickle
 import sys
 
 device = torch.device("cuda")
-#torch.set_default_tensor_type('torch.cuda.FloatTensor')
-#torch.backends.cudnn.benchmark = True
 
 
 class Brain(nn.Module):
 
-    def __init__(self, in_, out_size):
+    def __init__(self):
         super(Brain, self).__init__()
-        self.conv1 = nn.Conv2d(in_, 32, kernel_size=(1,2))
-        self.conv1_2 = nn.Conv2d(32, 32, (3,2))
-        self.conv1_3 = nn.Conv2d(32, 128, 2)
-        self.conv2 = nn.Conv2d(in_, 32, kernel_size=(2,1))
-        self.conv2_2 = nn.Conv2d(32, 32, (2,3))
-        self.conv2_3 = nn.Conv2d(32, 128, 2)
-        self.fc = nn.Linear(256, 32)
-        self.out = nn.Linear(32, out_size)
+        input_channels = 16
+        self.conv1_2 = nn.Conv2d(input_channels, 64, kernel_size=(1,2))
+        self.conv2_1 = nn.Conv2d(input_channels, 64, kernel_size=(2,1))
+        self.sec_conv = nn.Conv2d(64, 128, 2)
+        self.conv2_pool = nn.Conv2d(input_channels, 128, kernel_size=2, padding=1)
+        self.block_1 = nn.Conv2d(input_channels, 128, kernel_size=2)
+        self.block_2 = nn.Conv2d(128, 64, 1)
+        self.block_3 = nn.Conv2d(64, 128, kernel_size=2)
+        self.drop_cnn = nn.Dropout(0.1)
+        self.drop_fc1 = nn.Dropout(0.2)
+        self.fc1 = nn.Linear(4224, 256)
+        self.fc2 = nn.Linear(256, 256)
+        self.out = nn.Linear(256, 4)
 
     def forward(self, state):
-        x1 = torch.relu(self.conv1(state))
-        x1 = torch.relu(self.conv1_2(x1))
-        x1 = torch.relu(self.conv1_3(x1)).view(state.size(0), 1, -1)
-        x2 = torch.relu(self.conv2(state))
-        x2 = torch.relu(self.conv2_2(x2))
-        x2 = torch.relu(self.conv2_3(x2)).view(state.size(0), 1, -1)
-        x = torch.cat([x1, x2], dim=2)
-        x = torch.relu(self.fc(x))
+        x1_2 = torch.relu(self.conv1_2(state))
+        x2_1 = torch.relu(self.conv2_1(state))
+        x1_2_2 = torch.relu(self.sec_conv(x1_2))
+        x2_1_2 = torch.relu(self.sec_conv(x2_1))
+        x2_pool = torch.relu(self.conv2_pool(state))
+        x2_pool = torch.max_pool2d(x2_pool, 2)
+        bl = torch.relu(self.block_1(state))
+        bl = torch.relu(self.block_2(bl))
+        bl = torch.relu(self.block_3(bl))
+        bl_pool = torch.max_pool2d(bl, 2)
+        x = torch.cat([
+            x1_2.view(state.size(0), 1, -1),
+            x2_1.view(state.size(0), 1, -1),
+            x1_2_2.view(state.size(0), 1, -1),
+            x2_1_2.view(state.size(0), 1, -1),
+            x2_pool.view(state.size(0), 1, -1),
+            bl.view(state.size(0), 1, -1),
+            bl_pool.view(state.size(0), 1, -1),
+        ], dim=2)
+        #x = self.drop_cnn(x)
+        x = torch.relu(self.fc1(x))
+        #x = self.drop_fc1(x)
+        x = torch.relu(self.fc2(x))
         return self.out(x)
 
 
 class Agent():
     
-    def __init__(self, local_Q, target_Q, num_actions, eps_start=1.0, eps_end=0.1,
-                 eps_decay=0.996, gamma=0.99, alpha=5e-4, batch_size=128, memory_capacity=4e3, tau=1e-3):
-        self.local_Q = local_Q.to(device)
-        self.target_Q = target_Q.to(device)
+    def __init__(self, num_actions, eps_start=1.0, eps_end=0.03, eps_decay=0.996,
+                            gamma=0.995, memory_capacity=5000, batch_size=256, alpha=5e-3, tau=1e-3):
+        self.local_Q = Brain().to(device)
+        self.target_Q = Brain().to(device)
         self.target_Q.load_state_dict(self.local_Q.state_dict())
         self.target_Q.eval()
-        self.optimizer = optim.RMSprop(self.local_Q.parameters(), lr=alpha)
+        self.optimizer = optim.Adam(self.local_Q.parameters(), lr=alpha)
         self.loss = nn.MSELoss()
         self.num_actions = num_actions
         self.eps_start = eps_start
@@ -54,45 +73,86 @@ class Agent():
         self.gamma = gamma
         self.batch_size = batch_size
         self.replay_memory = ReplayMemory(memory_capacity)
+        self.indexes = np.arange(self.batch_size)
         self.scores = []
         self.episodes = []
-        self.batch_index = np.arange(self.batch_size)
-
+        self.durations = []
+        self.start = 0
+    
     def store_experience(self, *args):
         self.replay_memory.push(args)
 
     def select_action(self, state):
-        sample = np.random.random()
-        if sample > self.eps_start:
+        if np.random.random() > self.eps_start:
+            #self.local_Q.eval()
             with torch.no_grad():
-                state = torch.tensor(state, dtype=torch.float, device=device).unsqueeze(0)
-                action = torch.argmax(self.local_Q(state)).item()
+                obs = torch.tensor(state, device=device, dtype=torch.float).unsqueeze(0)
+                action = torch.argmax(self.local_Q(obs)).item()
+            #self.local_Q.train()
         else:
             action = np.random.randint(self.num_actions)
         return action
 
     def learn(self):
-        if len(self.replay_memory.memory) < self.batch_size:
+        if self.batch_size >= len(self.replay_memory.memory):
             return
-
         state_batch, action_batch, reward_batch, next_state_batch, done_batch = \
-            self.replay_memory.sample(self.batch_size)
+                self.replay_memory.sample(self.batch_size)
 
-        output = self.local_Q(state_batch).squeeze(1)
-        target = output.clone()
+        local_out = self.local_Q(state_batch)
+        target = local_out.clone()
+        target_out = torch.max(self.target_Q(next_state_batch), dim=2)[0].squeeze(1)
+        target[self.indexes,0,action_batch] = reward_batch + self.gamma * target_out * done_batch
 
-        # vanilla dqn
-        target[self.batch_index, action_batch] = reward_batch + \
-                self.gamma * torch.max(self.target_Q(next_state_batch), dim=2)[0].squeeze(1) * done_batch
-
-        loss = self.loss(output, target.detach()).to(device)
+        loss = self.loss(local_out, target.detach()).to(device)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-        # soft update
         for target_param, local_param in zip(self.target_Q.parameters(), self.local_Q.parameters()):
             target_param.data.copy_(self.tau * local_param.data + (1 - self.tau) * target_param.data)
+
+    def save(self, filename):
+        pickle_out = open(filename+".tt","wb")
+        saved = {
+            "local": self.local_Q.state_dict(),
+            "target": self.target_Q.state_dict(),
+            "optimizer": self.optimizer,
+            "loss": self.loss,
+            "eps_decay": self.eps_decay,
+            "eps_end": self.eps_end,
+            "eps_start": self.eps_start,
+            "tau": self.tau,
+            "gamma": self.gamma,
+            "batch_size": self.batch_size,
+            "scores": self.scores,
+            "episodes": self.episodes,
+            "durations": self.durations,
+            "start": self.start,
+            "replay_memory": self.replay_memory,
+        }
+        pickle.dump(saved, pickle_out)
+        pickle_out.close()
+
+    def load(self, filename):
+        pickle_in = open(filename+".tt", mode="rb")
+        info = pickle.load(pickle_in)
+        self.local_Q.load_state_dict(info["local"])
+        self.target_Q.load_state_dict(info["target"])
+        self.optimizer = info["optimizer"]
+        self.loss = info["loss"]
+        self.eps_decay = info["eps_decay"]
+        self.eps_end = info["eps_end"]
+        self.eps_start = info["eps_start"]
+        self.tau = info["tau"]
+        self.gamma = info["gamma"]
+        self.batch_size = info["batch_size"]
+        self.scores = info["scores"]
+        self.episodes = info["episodes"]
+        self.durations = info["durations"]
+        self.start = info["start"]
+        self.replay_memory = info["replay_memory"]
+        pickle_in.close()
 
 
 class ReplayMemory:
@@ -102,11 +162,15 @@ class ReplayMemory:
         self.memory = []
         self.position = 0
 
-    def push(self, *args):
+    def push(self, args):
         if len(self.memory) < self.capacity:
             self.memory.append(None)
-
-        self.memory[int(self.position)] = args[0]
+        else:
+            if self.memory[int(self.position)][2] > 7:
+                self.position = (self.position + 1) % self.capacity
+                self.push(args)
+                return
+        self.memory[int(self.position)] = args
         self.position = (self.position + 1) % self.capacity
 
     def sample(self, size):

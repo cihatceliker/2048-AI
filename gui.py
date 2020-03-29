@@ -3,6 +3,7 @@ import numpy as np
 import threading
 import time
 from environment import Environment
+from dqn import Agent
 
 SIZE = 500
 GRID_PADDING = 10
@@ -28,23 +29,44 @@ KEY_LEFT = "'a'"
 KEY_RIGHT = "'d'"
 
 class GameGrid(Frame):
-    def __init__(self, env):
+    def __init__(self):
         Frame.__init__(self)
-
-        self.env = env
-        self.row = env.row
-        self.col = env.col
+        self.env = Environment()
+        self.agent = Agent(4)
+        self.agent.load("20500")
+        self.row = self.env.row
+        self.col = self.env.col
         self.grid()
         self.master.title('2048')
         self.master.bind("<Key>", self.key_down)
-
         self.commands = {KEY_UP: 0, KEY_DOWN: 2, KEY_LEFT: 3, KEY_RIGHT: 1}
         self.grid_cells = []
         self.init_grid()
         threading.Thread(target=self.update).start()
         self.mainloop()
 
+    def update(self):
+        while True:
+            done = False
+            score = 0
+            ep_duration = 0
+            state = self.env.reset()
+            while not done:
+                action = self.agent.select_action(state)
+                state, reward, done, max_tile = self.env.step(action)
+                self.update_grid_cells()
+                time.sleep(0.1)
 
+    def update_grid_cells(self):
+        for i in range(self.row):
+            for j in range(self.col):
+                new_number = 2**int(self.env.board[i][j])
+                if new_number == 1:
+                    self.grid_cells[i][j].configure(text="", bg=BACKGROUND_COLOR_CELL_EMPTY)
+                else:
+                    self.grid_cells[i][j].configure(text=str(new_number), bg=BACKGROUND_COLOR_DICT[new_number], fg=CELL_COLOR_DICT[new_number])
+        self.update_idletasks()
+        
     def init_grid(self):
         background = Frame(self, bg=BACKGROUND_COLOR_GAME, width=SIZE, height=SIZE)
         background.grid()
@@ -58,31 +80,16 @@ class GameGrid(Frame):
                 grid_row.append(t)
             self.grid_cells.append(grid_row)
     
-    def update(self):
-        self.update_grid_cells()
-        while True:
-            if self.env.done:
-                self.env.reset()
-
-    def update_grid_cells(self):
-        for i in range(self.row):
-            for j in range(self.col):
-                new_number = 2**int(self.env.board[i][j])
-                if new_number == 1:
-                    self.grid_cells[i][j].configure(text="", bg=BACKGROUND_COLOR_CELL_EMPTY)
-                else:
-                    self.grid_cells[i][j].configure(text=str(new_number), bg=BACKGROUND_COLOR_DICT[new_number], fg=CELL_COLOR_DICT[new_number])
-        self.update_idletasks()
-        
     def key_down(self, event):
         key = repr(event.char)
+        """
         print(key)
         if key in self.commands:
             dir = self.commands[repr(event.char)]
             self.env.step(dir)
             self.update_grid_cells()
+        """
 
 
 if __name__ == "__main__":
-    env = Environment()
-    GameGrid(env)
+    GameGrid()
