@@ -2,9 +2,8 @@ import numpy as np
 import random
 import sys
 
-REWARD = lambda x: 2 ** x / 128
-
-DIE = -16
+REWARD = lambda x: 2.0 ** (x - 9)
+DIE = -4
 
 class Environment():
 
@@ -35,22 +34,21 @@ class Environment():
         return self.process_state(), self.reward, self.done, np.max(self.board)
 
     def process_state(self):
-        state = np.zeros((16, 4, 4))
+        state = np.zeros((13, 4, 4))
         for i in range(4):
             for j in range(4):
                 state[self.board[i,j], i, j] = 1
         return state
-        
     """
     def process_state(self):
-        state = np.zeros((32, 4, 4))
+        max_depth = 13 # 2^12
+        state = np.zeros((max_depth*2, 4, 4))
         for i in range(4):
             for j in range(4):
-                state[self.prev[i,j], i, j] = 1
-                state[self.board[i,j]+16, i, j] = 1
+                state[self.board[i,j], i, j] = 1
+                state[self.prev[i,j]+max_depth, i, j] = 1
         return state
     """
-
     def throw(self):
         empty_tiles = []
         for i in range(self.row):

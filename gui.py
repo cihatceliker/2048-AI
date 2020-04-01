@@ -33,7 +33,7 @@ class GameGrid(Frame):
         Frame.__init__(self)
         self.env = Environment()
         self.agent = Agent(4)
-        self.agent.load("20500")
+        self.agent.load("52600")
         self.row = self.env.row
         self.col = self.env.col
         self.grid()

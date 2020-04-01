@@ -4,6 +4,7 @@ import numpy as np
 import math
 import pickle
 import torch
+import sys
 
 num_actions = 4
 num_iter = 500000
@@ -11,15 +12,18 @@ print_interval = 10
 save_interval = 100
 env = Environment()
 agent = Agent(num_actions)
-#agent.load("36800") before halving
-agent.load("44000")
-print(agent.optimizer)
-#agent.optimizer = torch.optim.Adam(agent.local_Q.parameters(), 2e-3)
+#agent.load(sys.argv[1])
 start = agent.start + 1
-
+"""
+agent.optimizer = torch.optim.Adam(agent.local_Q.parameters(), 9e-5)
+print(agent.optimizer)
+cnt = 0
 for s in agent.replay_memory.memory:
-    if s[2] > 7:
-        print(s[2])
+    if s[2] > 8:
+        cnt += 1
+print(cnt)
+sys.exit(3)
+"""
 mx = 1
 for episode in range(start, num_iter):
     done = False

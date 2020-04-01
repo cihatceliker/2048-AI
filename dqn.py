@@ -14,43 +14,17 @@ class Brain(nn.Module):
 
     def __init__(self):
         super(Brain, self).__init__()
-        input_channels = 16
-        self.conv1_2 = nn.Conv2d(input_channels, 64, kernel_size=(1,2))
-        self.conv2_1 = nn.Conv2d(input_channels, 64, kernel_size=(2,1))
-        self.sec_conv = nn.Conv2d(64, 128, 2)
-        self.conv2_pool = nn.Conv2d(input_channels, 128, kernel_size=2, padding=1)
-        self.block_1 = nn.Conv2d(input_channels, 128, kernel_size=2)
-        self.block_2 = nn.Conv2d(128, 64, 1)
-        self.block_3 = nn.Conv2d(64, 128, kernel_size=2)
-        self.drop_cnn = nn.Dropout(0.1)
-        self.drop_fc1 = nn.Dropout(0.2)
-        self.fc1 = nn.Linear(4224, 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.out = nn.Linear(256, 4)
+        input_channels = 13
+        self.conv1 = nn.Conv2d(input_channels, 32, kernel_size=2)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=2)
+        self.fc1 = nn.Linear(256, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.out = nn.Linear(64, 4)
 
     def forward(self, state):
-        x1_2 = torch.relu(self.conv1_2(state))
-        x2_1 = torch.relu(self.conv2_1(state))
-        x1_2_2 = torch.relu(self.sec_conv(x1_2))
-        x2_1_2 = torch.relu(self.sec_conv(x2_1))
-        x2_pool = torch.relu(self.conv2_pool(state))
-        x2_pool = torch.max_pool2d(x2_pool, 2)
-        bl = torch.relu(self.block_1(state))
-        bl = torch.relu(self.block_2(bl))
-        bl = torch.relu(self.block_3(bl))
-        bl_pool = torch.max_pool2d(bl, 2)
-        x = torch.cat([
-            x1_2.view(state.size(0), 1, -1),
-            x2_1.view(state.size(0), 1, -1),
-            x1_2_2.view(state.size(0), 1, -1),
-            x2_1_2.view(state.size(0), 1, -1),
-            x2_pool.view(state.size(0), 1, -1),
-            bl.view(state.size(0), 1, -1),
-            bl_pool.view(state.size(0), 1, -1),
-        ], dim=2)
-        #x = self.drop_cnn(x)
+        x = torch.relu(self.conv1(state))
+        x = torch.relu(self.conv2(x)).view(state.size(0), 1, -1)
         x = torch.relu(self.fc1(x))
-        #x = self.drop_fc1(x)
         x = torch.relu(self.fc2(x))
         return self.out(x)
 
@@ -58,7 +32,7 @@ class Brain(nn.Module):
 class Agent():
     
     def __init__(self, num_actions, eps_start=1.0, eps_end=0.03, eps_decay=0.996,
-                            gamma=0.995, memory_capacity=5000, batch_size=256, alpha=5e-3, tau=1e-3):
+                            gamma=0.9999, memory_capacity=5000, batch_size=128, alpha=7e-3, tau=1e-3):
         self.local_Q = Brain().to(device)
         self.target_Q = Brain().to(device)
         self.target_Q.load_state_dict(self.local_Q.state_dict())
@@ -84,11 +58,11 @@ class Agent():
 
     def select_action(self, state):
         if np.random.random() > self.eps_start:
-            #self.local_Q.eval()
+            self.local_Q.eval()
             with torch.no_grad():
                 obs = torch.tensor(state, device=device, dtype=torch.float).unsqueeze(0)
                 action = torch.argmax(self.local_Q(obs)).item()
-            #self.local_Q.train()
+            self.local_Q.train()
         else:
             action = np.random.randint(self.num_actions)
         return action
@@ -166,7 +140,10 @@ class ReplayMemory:
         if len(self.memory) < self.capacity:
             self.memory.append(None)
         else:
-            if self.memory[int(self.position)][2] > 7:
+            reward = self.memory[int(self.position)][2]
+            rnd = np.random.random()
+            #if reward > 8:
+            if reward > 2 or (reward == 2 and rnd < 0.98) or (reward < 0 and rnd < 0.99):
                 self.position = (self.position + 1) % self.capacity
                 self.push(args)
                 return
