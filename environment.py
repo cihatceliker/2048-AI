@@ -2,8 +2,8 @@ import numpy as np
 import random
 import sys
 
-REWARD = lambda x: 2.0 ** (x - 9)
-DIE = -4
+REWARD = lambda x: 2.0 ** (x - 8)
+DIE = -8
 
 class Environment():
 
@@ -22,17 +22,16 @@ class Environment():
         self.board = np.zeros((self.row, self.col), dtype=np.int8)
         self.prev = self.board.copy()
         self.done = False
+        self.prev = self.board.copy()
         self.throw()
         return self.process_state()
 
     def step(self, action):
         self.reward = 0
-        self.prev = self.board.copy()
         self.done = False
         self.moves[action]()
         self.throw()
         return self.process_state(), self.reward, self.done, np.max(self.board)
-
     def process_state(self):
         state = np.zeros((13, 4, 4))
         for i in range(4):
@@ -47,8 +46,10 @@ class Environment():
             for j in range(4):
                 state[self.board[i,j], i, j] = 1
                 state[self.prev[i,j]+max_depth, i, j] = 1
+        self.prev = self.board.copy()
         return state
     """
+
     def throw(self):
         empty_tiles = []
         for i in range(self.row):
