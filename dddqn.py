@@ -125,13 +125,18 @@ class ReplayMemory:
     def push(self, args):
         if len(self.memory) < self.capacity:
             self.memory.append(None)
+        else:
+            reward = self.memory[int(self.position)][2]
+            if reward > 2:
+                self.position = (self.position + 1) % self.capacity
+                self.push(args)
+                return
+
         self.memory[int(self.position)] = args
         self.position = (self.position + 1) % self.capacity
 
     def sample(self, size):
-        batch = random.sample(self.memory, size)
-
-        return list(zip(*batch))
+        return list(zip(*random.sample(self.memory, size)))
 
 
 def load_agent(filename):
