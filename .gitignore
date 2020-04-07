@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 *.tt
 *stack/
+imit.py
 
 # C extensions
 *.so

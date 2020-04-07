@@ -1,3 +1,4 @@
+
 import torch
 import torch.optim as optim
 import torch.nn as nn
@@ -10,44 +11,52 @@ import sys
 device = torch.device("cuda")
 
 
-class DuelingDQNetwork(nn.Module):
+class Network(nn.Module):
 
-    def __init__(self):
-        super(DuelingDQNetwork, self).__init__()
-        input_channels = 13
-        self.conv1 = nn.Conv2d(input_channels, 32, kernel_size=2)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=2)
-        feature_size = 256
-        self.value = nn.Sequential(
-            nn.Linear(feature_size, 256),
+    def __init__(self, n_actions):
+        super(Network, self).__init__()
+        self.conv = CNN(n_actions)
+        self.fc1 = nn.Linear(1184, 256)
+        self.out = nn.Linear(256, n_actions)
+        self.to(device)
+
+    def forward(self, state):
+        features = self.conv(state)
+        x = torch.relu(self.fc1(features))
+        return self.out(x)
+
+
+class CNN(nn.Module):
+
+    def __init__(self, out_size):
+        super(CNN, self).__init__()
+        in_channels = 28
+        self.convR = nn.Conv2d(in_channels, in_channels, (2,1))
+        self.convC = nn.Conv2d(in_channels, in_channels, (1,2))
+        self.block1 = nn.Sequential(
+            nn.Conv2d(in_channels, 64, 2),
+            nn.Conv2d(64, 128, 2),
             nn.ReLU(),
-            nn.Linear(256, 1)
-        )
-        self.advantage = nn.Sequential(
-            nn.Linear(feature_size, 256),
-            nn.ReLU(),
-            nn.Linear(256, 4)
         )
 
     def forward(self, state):
-        x = torch.relu(self.conv1(state))
-        x = torch.relu(self.conv2(x)).view(state.size(0), 1, -1)
-        value = self.value(x)
-        advantage = self.advantage(x)
-        advantage = advantage - advantage.mean(dim=2, keepdim=True)
-        return value + advantage
+        xR = torch.relu(self.convR(state)).view(state.size(0), 1, -1)
+        xC = torch.relu(self.convC(state)).view(state.size(0), 1, -1)
+        x = self.block1(state).view(state.size(0), 1, -1)
+        return torch.cat([xR, xC, x], dim=2)
+
 
 
 class Agent():
-    
-    def __init__(self, num_actions, eps_start=1.0, eps_end=0.03, eps_decay=0.996,
-                            gamma=0.9999, memory_capacity=5000, batch_size=128, alpha=5e-4, tau=1e-3):
-        self.local_Q = DuelingDQNetwork().to(device)
-        self.target_Q = DuelingDQNetwork().to(device)
+
+    def __init__(self, num_actions, eps_start=1.0, eps_end=0, eps_decay=0.996,
+                            gamma=0.992, memory_capacity=20000, batch_size=128, alpha=1e-3, tau=1e-3):
+        self.local_Q = Network(num_actions).to(device)
+        self.target_Q = Network(num_actions).to(device)
         self.target_Q.load_state_dict(self.local_Q.state_dict())
         self.target_Q.eval()
         self.optimizer = optim.Adam(self.local_Q.parameters(), lr=alpha)
-        self.loss = nn.MSELoss()
+        self.loss = nn.SmoothL1Loss()
         self.num_actions = num_actions
         self.eps_start = eps_start
         self.eps_end = eps_end
@@ -76,31 +85,23 @@ class Agent():
             action = np.random.randint(self.num_actions)
         return action
 
-    def sample_batch(self):
-        batch = self.replay_memory.sample(self.batch_size)
-
-        state_batch = torch.tensor(batch[0], device=device, dtype=torch.float)
-        action_batch = torch.tensor(batch[1])
-        reward_batch = torch.tensor(batch[2], device=device)
-        next_state_batch = torch.tensor(batch[3], device=device, dtype=torch.float)
-        done_batch = torch.tensor(batch[4], device=device)
-
-        return state_batch, action_batch, reward_batch, next_state_batch, done_batch
-
     def learn(self):
-        if self.batch_size >= len(self.replay_memory.memory):
+        ln = len(self.replay_memory.memory)
+        if self.batch_size >= ln or ln < self.replay_memory.capacity:
             return
         
-        state_batch, action_batch, reward_batch, next_state_batch, done_batch = self.sample_batch()
+        state_batch, action_batch, reward_batch, next_state_batch, done_batch = \
+            self.replay_memory.sample(self.batch_size)
         
         max_actions = torch.argmax(self.local_Q(next_state_batch), dim=2).squeeze(1)
-        evaluated = self.target_Q(next_state_batch)[self.indexes,0,max_actions]
-        evaluated = reward_batch + self.gamma * evaluated * done_batch
-
         prediction = self.local_Q(state_batch)[self.indexes,0,action_batch]
 
+        with torch.no_grad():
+            evaluated = self.target_Q(next_state_batch)[self.indexes,0,max_actions]
+            evaluated = reward_batch + self.gamma * evaluated * done_batch
+
         self.optimizer.zero_grad()
-        loss = self.loss(prediction, evaluated).to(device).backward()
+        self.loss(prediction, evaluated).to(device).backward()
         self.optimizer.step()
 
         for target_param, local_param in zip(self.target_Q.parameters(), self.local_Q.parameters()):
@@ -108,11 +109,17 @@ class Agent():
         
         self.eps_start = max(self.eps_end, self.eps_decay * self.eps_start)
         
-
     def save(self, filename):
         pickle_out = open(filename+".tt","wb")
         pickle.dump(self, pickle_out)
         pickle_out.close()
+
+
+def load_agent(filename):
+    pickle_in = open(filename, mode="rb")
+    agent = pickle.load(pickle_in)
+    pickle_in.close()
+    return agent
 
 
 class ReplayMemory:
@@ -126,21 +133,24 @@ class ReplayMemory:
         if len(self.memory) < self.capacity:
             self.memory.append(None)
         else:
+            """
             reward = self.memory[int(self.position)][2]
-            if reward > 2:
+            rnd = np.random.random()
+            if (reward >= 1 and rnd < 0.9): # (reward > 2 and rnd < 0.98) or 
                 self.position = (self.position + 1) % self.capacity
                 self.push(args)
                 return
-
+            """
         self.memory[int(self.position)] = args
         self.position = (self.position + 1) % self.capacity
 
     def sample(self, size):
-        return list(zip(*random.sample(self.memory, size)))
+        batch = list(zip(*random.sample(self.memory, size)))
 
+        state_batch = torch.tensor(batch[0], device=device, dtype=torch.float)
+        action_batch = torch.tensor(batch[1])
+        reward_batch = torch.tensor(batch[2], device=device)
+        next_state_batch = torch.tensor(batch[3], device=device, dtype=torch.float)
+        done_batch = torch.tensor(batch[4], device=device)
 
-def load_agent(filename):
-    pickle_in = open(filename, mode="rb")
-    agent = pickle.load(pickle_in)
-    pickle_in.close()
-    return agent
+        return state_batch, action_batch, reward_batch, next_state_batch, done_batch

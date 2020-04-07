@@ -1,5 +1,5 @@
 from environment import Environment
-from dddqn import Agent, load_agent
+from agent import Agent, load_agent
 import numpy as np
 import math
 import pickle
@@ -7,17 +7,16 @@ import torch
 import sys
 
 num_actions = 4
-num_iter = 500000
+num_iter = 5000000000
 print_interval = 10
-save_interval = 100
+save_interval = 200
 env = Environment()
 
-if len(sys.argv) > 1:
-    agent = load_agent(sys.argv[1])
-else:
-    agent = Agent(num_actions)
+agent = Agent(num_actions) if len(sys.argv) == 1 else load_agent(sys.argv[1])
+agent.optimizer = torch.optim.Adam(agent.local_Q.parameters(), 5e-4)
 
-mx = 1
+
+mx = 0
 for episode in range(agent.start, num_iter):
     done = False
     score = 0
@@ -30,10 +29,8 @@ for episode in range(agent.start, num_iter):
         state = next_state
         score += reward
         ep_duration += 1
-        mx = max(max_tile, mx)
-
+    mx = max(max_tile, mx)
     agent.learn()
-
     agent.episodes.append(episode)
     agent.scores.append(score)
     agent.durations.append(ep_duration)
@@ -43,8 +40,8 @@ for episode in range(agent.start, num_iter):
         avg_score = np.mean(agent.scores[max(0, episode-print_interval):(episode+1)])
         avg_duration = np.mean(agent.durations[max(0, episode-print_interval):(episode+1)])
         if episode % save_interval == 0:
-            agent.start = episode
+            agent.start = episode + 1
             agent.save(str(episode))
         print("Episode: %d - Max Score: %d - Avg. Duration: %d - Avg. Score: %.3f - Epsilon: %.3f" % 
-                    (episode, 2**mx, avg_duration, avg_score, agent.eps_start))
-        mx = 1
+                    (episode, mx, avg_duration, avg_score, agent.eps_start))
+        mx = 0

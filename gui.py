@@ -2,8 +2,9 @@ from tkinter import Frame, Label, CENTER
 import numpy as np
 import threading
 import time
+import sys
 from environment import Environment
-from dqn import Agent
+from agent import Agent, load_agent
 
 SIZE = 500
 GRID_PADDING = 10
@@ -18,28 +19,17 @@ CELL_COLOR_DICT = { 2:"#776e65", 4:"#776e65", 8:"#f9f6f2", 16:"#f9f6f2", \
                     512:"#f9f6f2", 1024:"#f9f6f2", 2048:"#f9f6f2" }
 FONT = ("Verdana", 40, "bold")
 
-KEY_UP_ALT = "\'\\uf700\'"
-KEY_DOWN_ALT = "\'\\uf701\'"
-KEY_LEFT_ALT = "\'\\uf702\'"
-KEY_RIGHT_ALT = "\'\\uf703\'"
-
-KEY_UP = "'w'"
-KEY_DOWN = "'s'"
-KEY_LEFT = "'a'"
-KEY_RIGHT = "'d'"
 
 class GameGrid(Frame):
     def __init__(self):
         Frame.__init__(self)
         self.env = Environment()
         self.agent = Agent(4)
-        self.agent.load("52600")
+        self.agent = load_agent(sys.argv[1])
         self.row = self.env.row
         self.col = self.env.col
         self.grid()
         self.master.title('2048')
-        self.master.bind("<Key>", self.key_down)
-        self.commands = {KEY_UP: 0, KEY_DOWN: 2, KEY_LEFT: 3, KEY_RIGHT: 1}
         self.grid_cells = []
         self.init_grid()
         threading.Thread(target=self.update).start()
@@ -80,16 +70,6 @@ class GameGrid(Frame):
                 grid_row.append(t)
             self.grid_cells.append(grid_row)
     
-    def key_down(self, event):
-        key = repr(event.char)
-        """
-        print(key)
-        if key in self.commands:
-            dir = self.commands[repr(event.char)]
-            self.env.step(dir)
-            self.update_grid_cells()
-        """
-
 
 if __name__ == "__main__":
     GameGrid()
