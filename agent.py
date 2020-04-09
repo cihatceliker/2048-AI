@@ -1,4 +1,3 @@
-
 import torch
 import torch.optim as optim
 import torch.nn as nn
@@ -50,7 +49,7 @@ class CNN(nn.Module):
 class Agent():
 
     def __init__(self, num_actions, eps_start=1.0, eps_end=0, eps_decay=0.996,
-                            gamma=0.992, memory_capacity=20000, batch_size=128, alpha=1e-3, tau=1e-3):
+                            gamma=0.992, memory_capacity=20000, batch_size=128, alpha=8e-4, tau=1e-3):
         self.local_Q = Network(num_actions).to(device)
         self.target_Q = Network(num_actions).to(device)
         self.target_Q.load_state_dict(self.local_Q.state_dict())
@@ -86,8 +85,7 @@ class Agent():
         return action
 
     def learn(self):
-        ln = len(self.replay_memory.memory)
-        if self.batch_size >= ln or ln < self.replay_memory.capacity:
+        if self.batch_size >= len(self.replay_memory.memory):
             return
         
         state_batch, action_batch, reward_batch, next_state_batch, done_batch = \
@@ -132,17 +130,9 @@ class ReplayMemory:
     def push(self, args):
         if len(self.memory) < self.capacity:
             self.memory.append(None)
-        else:
-            """
-            reward = self.memory[int(self.position)][2]
-            rnd = np.random.random()
-            if (reward >= 1 and rnd < 0.9): # (reward > 2 and rnd < 0.98) or 
-                self.position = (self.position + 1) % self.capacity
-                self.push(args)
-                return
-            """
         self.memory[int(self.position)] = args
         self.position = (self.position + 1) % self.capacity
+        
 
     def sample(self, size):
         batch = list(zip(*random.sample(self.memory, size)))

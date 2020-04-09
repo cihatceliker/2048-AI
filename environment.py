@@ -1,7 +1,10 @@
 import numpy as np
 import random
 
-REWARD = lambda x,y: 2.0 ** (x - y)
+def REWARD(x):
+    if x < 9:
+        return 0
+    return 2.0 ** (x - 10)
 DIE = -4
 
 class Environment():
@@ -16,7 +19,6 @@ class Environment():
             2: self.move_down,
             3: self.move_left
         }
-        self.y = 9
     
     def reset(self):
         self.board = np.zeros((self.row, self.col), dtype=np.int8)
@@ -32,9 +34,6 @@ class Environment():
         self.moves[action]()
         self.throw()
         mx = np.max(self.board)
-        #if mx == self.y + 1:
-        #self.y += 1
-        #print("y -> ", 2**self.y)
         return self.process_state(), self.reward, self.done, 2**mx
         
     def process_state(self):
@@ -71,7 +70,7 @@ class Environment():
                     for k in reversed(range(j)):
                         if self.board[i, k] == curr:
                             self.board[i, j] += 1
-                            self.reward = REWARD(self.board[i, j], self.y)
+                            self.reward = REWARD(self.board[i, j])
                             self.board[i, k] = 0
                             break
                         elif self.board[i, k] != 0:
@@ -93,7 +92,7 @@ class Environment():
                     for k in range(j + 1, self.col):
                         if self.board[i, k] == curr:
                             self.board[i, j] += 1
-                            self.reward = REWARD(self.board[i, j], self.y)
+                            self.reward = REWARD(self.board[i, j])
                             self.board[i, k] = 0
                             break
                         elif self.board[i, k] != 0:

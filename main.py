@@ -1,5 +1,5 @@
 from environment import Environment
-from agent import Agent, load_agent
+from agent import Agent, load_agent, ReplayMemory
 import numpy as np
 import math
 import pickle
@@ -7,14 +7,12 @@ import torch
 import sys
 
 num_actions = 4
-num_iter = 5000000000
+num_iter = 500000
 print_interval = 10
-save_interval = 200
+save_interval = 100
 env = Environment()
 
 agent = Agent(num_actions) if len(sys.argv) == 1 else load_agent(sys.argv[1])
-agent.optimizer = torch.optim.Adam(agent.local_Q.parameters(), 5e-4)
-
 
 mx = 0
 for episode in range(agent.start, num_iter):
@@ -25,7 +23,7 @@ for episode in range(agent.start, num_iter):
     while not done:
         action = agent.select_action(state)
         next_state, reward, done, max_tile = env.step(action)
-        agent.store_experience(state, action, reward, next_state, 1-done)
+        agent.store_experience(state, action, reward, next_state, 1-done, max_tile)
         state = next_state
         score += reward
         ep_duration += 1
